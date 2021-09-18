@@ -3,5 +3,4 @@ project(Fichiers C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(Sender senderUDP.c)
-add_executable(Recever recvUDP.c)
+add_executable(Serveur serveurTCP.c)
