@@ -4,3 +4,4 @@ project(Fichiers C)
 set(CMAKE_C_STANDARD 11)
 
 add_executable(Serveur serveurTCP.c)
+add_executable(Client clientTCP.c)
