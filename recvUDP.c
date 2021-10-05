@@ -8,6 +8,9 @@
 
 #define BUFF 512
 
+/*
+ * Run with 1 args : int numport
+ */
 int main(int argc, char *argv[]) {
     const long port = strtol(argv[1], NULL, 10);
     socklen_t len = sizeof(struct sockaddr_in);

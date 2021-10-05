@@ -7,6 +7,12 @@
 
 #define BUFF 512
 
+/*
+ * Run with 3 args :
+ * - string <IP_DEST>
+ * - int <num_port>
+ * - string <message>
+ */
 int main(int argc, char *argv[]) {
     const long port = strtol(argv[2], NULL, 10);
     const in_addr_t ipDest = inet_addr(argv[1]);
