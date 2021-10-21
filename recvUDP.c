@@ -9,34 +9,18 @@
 #define BUFF 512
 
 /*
- * Run with 2 args :
- * - int <num_port>
- * - string <file_path>
+ * Run with 1 args : int numport
  */
 int main(int argc, char *argv[]) {
     const long port = strtol(argv[1], NULL, 10);
     socklen_t len = sizeof(struct sockaddr_in);
     char mess[BUFF];
     struct sockaddr_in socketAdress;
-    FILE * fileToWrite;
 
     // vérification que le port est été saisie.
     if(port == 0 ) {
         perror("Erreur au niveau du port de destination");
         exit(0);
-    }
-
-    // check if the file path has been set
-    if (argc < 2) {
-        printf("Vous n'avez pas rentrée de chemin pour le fichier");
-        exit(1);
-    }
-
-    fileToWrite = fopen(argv[2], "w");
-
-    if (fileToWrite == NULL) {
-        perror("Erreur avec le fichier");
-        exit(1);
     }
 
     // Initialisation du socket et test d'erreur
@@ -60,21 +44,20 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
 
-    while (1) {
-        // wait to get the message from the sender
-        ssize_t result = recvfrom(sock, mess, BUFF, 0, (struct sockaddr*)&socketAdress, &len);
+    // wait to get the message from the sender
+    ssize_t result = recvfrom(sock, mess, BUFF, 0, (struct sockaddr*)&socketAdress, &len);
 
-        if (result == -1) {
-            perror("Problème au niveau du résultat");
-            exit(0);
-        }
-
-        if (strcmp(mess, "END") == 0) {
-            break;
-        }
-
-        fputs(mess, fileToWrite);
+    if (result == -1) {
+        perror("Problème au niveau du résultat");
+        exit(0);
+    } else {
+        char ipSrc[INET_ADDRSTRLEN];
+        inet_ntop(AF_INET, &socketAdress.sin_addr, ipSrc, INET_ADDRSTRLEN);
+        printf("Message : %s \n", mess);
+        printf("Paquet recu : %zd \n", result);
+        printf("Caractère recu : %lu \n", strlen(mess));
+        printf("Caractère recu : %s \n", ipSrc);
+        printf("Port recu : %ld \n", port);
     }
-
     return 0;
 }
