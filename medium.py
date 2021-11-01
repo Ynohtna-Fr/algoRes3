@@ -43,6 +43,10 @@ def parse_type(t):
     if t & TYPE_RST:
         print(" RST ", end="")
         ok_ = True
+    if t == 0:
+        print(" DATA ", end="")
+        ok_ = True
+    
     if not ok_:
         print("Unrecognized Type : Please check your packet format", end="")
     print("")
@@ -69,11 +73,11 @@ def parse_new_messages(msg):
     print("Flux ID : {}".format(flux))
     t = msg[1]
     parse_type(t)
-    nchars = 1
+    nchars = 2
 #   string to int or long. Type depends on nchars
     seq = sum((msg[byte + 2])<<8*(nchars-byte-1) for byte in range(nchars))
     print("SeqNum : {}".format(seq))
-    nchars = 1
+    nchars = 2
 #   string to int or long. Type depends on nchars
     ack_seq = sum((msg[byte + 4])<<8*(nchars-byte-1) for byte in range(nchars))
     print("Ack seq Num : {}".format(ack_seq))
@@ -90,11 +94,11 @@ def parse_new_messages_server(msg):
     print("Flux ID : {}".format(flux))
     t = msg[1]
     parse_type(t)
-    nchars = 1
+    nchars = 2
 #   string to int or long. Type depends on nchars
     seq = sum((msg[byte + 2])<<8*(nchars-byte-1) for byte in range(nchars))
     print("SeqNum : {}".format(seq))
-    nchars = 1
+    nchars = 2
 #   string to int or long. Type depends on nchars
     ack_seq = sum((msg[byte + 4])<<8*(nchars-byte-1) for byte in range(nchars))
     print("Ack seq Num : {}".format(ack_seq))
@@ -124,7 +128,7 @@ for opt, arg in options:
     if opt in ('-e','--ecn'):
         ecn = True
     if opt in ('-l','--limit'):
-        MAX_PACKETS = arg
+        MAX_PACKETS = int(arg)
     if opt in ('-h', '--help'):
         help()
         exit(0)
@@ -170,15 +174,15 @@ while con:
                 if ecn :
                     if not tagged:
                         data_tmp = bytearray(data)
-                        data_tmp[5] = ECN_ACTIVE
+                        data_tmp[6] = ECN_ACTIVE
                         data = bytes(data_tmp)
                         tagged = True
-                    sock_sender.sendto(data, (dest_recv, port_recv))
+                    sock_recv.sendto(data, (dest_recv, port_recv))
                 else:
                     if random.random() <= 0.7:
-                        sock_sender.sendto(data, (dest_recv, port_recv))
+                        sock_recv.sendto(data, (dest_recv, port_recv))
             else:
-                sock_sender.sendto(data, (dest_recv, port_recv))
+                sock_recv.sendto(data, (dest_recv, port_recv))
 
             
             
@@ -189,7 +193,7 @@ while con:
             
         elif s == sock_recv:
             data, addr = sock_recv.recvfrom(64)
-            sock_recv.sendto(data, (dest_sender, port_sender))
+            sock_sender.sendto(data, (dest_sender, port_sender))
             if debug :
                 print("message {} received from receiver".format(data))
                 #parse_new_messages(data)
