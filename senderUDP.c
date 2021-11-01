@@ -5,7 +5,7 @@
 #include <string.h>
 #include <arpa/inet.h>
 
-#define BUFF 512
+#define BUFF 52
 
 /*
  * Run with 3 args :
@@ -14,19 +14,37 @@
  * - string <message>
  */
 int main(int argc, char *argv[]) {
+
     const long port = strtol(argv[2], NULL, 10);
     const in_addr_t ipDest = inet_addr(argv[1]);
     struct sockaddr_in socketAdress;
     socklen_t len = sizeof socketAdress;
-    char mess[BUFF];
+    char mess[52];
+    // Id du Flux
+    mess[0] = 25;
+    // Type
+    mess[1] = 0;
+    // num séquence
+    mess[2] = 5;
+    // num Acquittement
+    mess[4] = 6;
+    // ECN
+    mess[6] = 0;
+    // Fen. Emission
+    mess[7] = 52;
 
-    if (strlen(argv[3]) > 512) {
+    sprintf(&mess[8], "%s", "salut les kidou comment ça va ? ");
+
+    printf("len addr : %c \n", mess[8]);
+    printf("len addr : %c \n", mess[9]);
+    printf("len addr : %c \n", mess[10]);
+    if (strlen(argv[3]) > 351) {
         printf("Votre message est trop grand ! Il doit faire moins 512 caractere.");
         exit(0);
     }
 
-    sprintf(mess, "%s", argv[3]);
-
+//    sprintf(mess, "%s", argv[3]);
+//    sprintf(data, "%s", "Solido pugnantium iam ductores concitat alacriter anceps in subire quorum dolorem sed certamen hastisque terrebat quorum alacriter occurrere longe cum iram cunctorum et iram eum habitus consurgentem revocavere concitat iram habitus miles certamen dolorem in locari iam pugnantium qui qui certamen intempestivum quorum scuta iam iam quiquzhd iuqzh diuh");
     // vérification que le port est été saisie.
     if(port == 0 ) {
         perror("Erreur au niveau du port de destination \n");
@@ -45,7 +63,7 @@ int main(int argc, char *argv[]) {
     socketAdress.sin_port = htons(port);
 
     // Envoie d'un message vers la destination et vérification de l'envoie.
-    ssize_t sended = sendto(sock, mess, BUFF, 0, (struct sockaddr*)&socketAdress, len);
+    ssize_t sended = sendto(sock, mess, 52, 0, (struct sockaddr*)&socketAdress, len);
     if (sended == -1) {
         perror("Problème au niveau de l'envoie");
     } else {
