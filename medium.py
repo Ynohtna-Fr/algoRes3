@@ -94,11 +94,11 @@ def parse_new_messages_server(msg):
     print("Flux ID : {}".format(flux))
     t = msg[1]
     parse_type(t)
-    nchars = 2
+    nchars = 1
 #   string to int or long. Type depends on nchars
     seq = sum((msg[byte + 2])<<8*(nchars-byte-1) for byte in range(nchars))
     print("SeqNum : {}".format(seq))
-    nchars = 2
+    nchars = 1
 #   string to int or long. Type depends on nchars
     ack_seq = sum((msg[byte + 4])<<8*(nchars-byte-1) for byte in range(nchars))
     print("Ack seq Num : {}".format(ack_seq))
