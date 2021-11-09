@@ -6,7 +6,13 @@
 #include <arpa/inet.h>
 
 #define BUFF 52
-
+#define ID_FLUX 0
+#define TYPE 1
+#define NUM_SEQ 2
+#define NUM_ACK 4
+#define ECN 6
+#define C_WINDOW 7
+#define DATA 8
 /*
  * Run with 3 args :
  * - string <IP_DEST>
@@ -21,30 +27,25 @@ int main(int argc, char *argv[]) {
     socklen_t len = sizeof socketAdress;
     char mess[52];
     // Id du Flux
-    mess[0] = 25;
+    mess[ID_FLUX] = 25;
     // Type
-    mess[1] = 0;
+    mess[TYPE] = 0;
     // num séquence
-    mess[2] = 5;
+    mess[NUM_SEQ] = 5;
     // num Acquittement
-    mess[4] = 6;
+    mess[NUM_ACK] = 6;
     // ECN
-    mess[6] = 0;
+    mess[ECN] = 0;
     // Fen. Emission
-    mess[7] = 52;
+    mess[C_WINDOW] = 52;
 
-    sprintf(&mess[8], "%s", "salut les kidou comment ça va ? ");
+    sprintf(&mess[DATA], "%s", "salut les kidou comment ça va ? ");
 
-    printf("len addr : %c \n", mess[8]);
-    printf("len addr : %c \n", mess[9]);
-    printf("len addr : %c \n", mess[10]);
     if (strlen(argv[3]) > 351) {
         printf("Votre message est trop grand ! Il doit faire moins 512 caractere.");
         exit(0);
     }
 
-//    sprintf(mess, "%s", argv[3]);
-//    sprintf(data, "%s", "Solido pugnantium iam ductores concitat alacriter anceps in subire quorum dolorem sed certamen hastisque terrebat quorum alacriter occurrere longe cum iram cunctorum et iram eum habitus consurgentem revocavere concitat iram habitus miles certamen dolorem in locari iam pugnantium qui qui certamen intempestivum quorum scuta iam iam quiquzhd iuqzh diuh");
     // vérification que le port est été saisie.
     if(port == 0 ) {
         perror("Erreur au niveau du port de destination \n");
@@ -62,12 +63,23 @@ int main(int argc, char *argv[]) {
     socketAdress.sin_addr.s_addr = htonl(ipDest);;
     socketAdress.sin_port = htons(port);
 
-    // Envoie d'un message vers la destination et vérification de l'envoie.
+    // Envoie d'une série de message
+    for (int i = 0; i < 100; ++i) {
+        // Envoie d'un message vers la destination et vérification de l'envoie.
+        ssize_t sended = sendto(sock, mess, 52, 0, (struct sockaddr*)&socketAdress, len);
+        if (sended == -1) {
+            perror("Problème au niveau de l'envoie");
+        } else {
+            printf("Envoie de %zd octet \n", sended);
+        }
+    }
+    // Envoie d'un message vde fin de connection.
+    mess[TYPE] = 2;
     ssize_t sended = sendto(sock, mess, 52, 0, (struct sockaddr*)&socketAdress, len);
     if (sended == -1) {
         perror("Problème au niveau de l'envoie");
     } else {
-        printf("Envoie de %zd octet", sended);
+        printf("Envoie de la fin \n");
     }
 
     return 0;

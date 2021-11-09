@@ -1,12 +1,19 @@
 #include <stdio.h>
 #include <strings.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <stdlib.h>
 
 #define BUFF 52
+#define BUFF 52
+#define ID_FLUX 0
+#define TYPE 1
+#define NUM_SEQ 2
+#define NUM_ACK 4
+#define ECN 6
+#define C_WINDOW 7
+#define DATA 8
 
 /*
  * Run with 1 args : int numport
@@ -45,25 +52,28 @@ int main(int argc, char *argv[]) {
         exit(0);
     }
 
-    // wait to get the messSrcage from the sender
-    ssize_t result = recvfrom(sock, messSrc, BUFF, 0, (struct sockaddr*)&socketAdress, &len);
-
-    if (result == -1) {
-        perror("Problème au niveau du résultat");
-        exit(0);
-    } else {
-        char ipSrc[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &socketAdress.sin_addr, ipSrc, INET_ADDRSTRLEN);
-        printf("ID du flux : %d \n", messSrc[0]);
-        printf("Type du flux : %d\n", messSrc[1]);
-        printf("NUméro de seq %d \n", messSrc[2]);
-        printf("Numéro d'ack %d \n", messSrc[4]);
-        printf("ECN Enable ? %d \n", messSrc[6]);
-        printf("Fenetre Emission %d \n", messSrc[7]);
-        printf("message : %s \n", &messSrc[8]);
-        printf("Octet recu : %zd \n", result);
-        printf("Caractère recu : %s \n", ipSrc);
-        printf("Port recu : %hu \n", ntohs(socketAdress.sin_port));
-    }
+    do {
+        // wait to get the messSrcage from the sender
+        ssize_t result = recvfrom(sock, messSrc, BUFF, 0, (struct sockaddr*)&socketAdress, &len);
+        if (result == -1) {
+            perror("Problème au niveau du résultat");
+            exit(0);
+        } else {
+            char ipSrc[INET_ADDRSTRLEN];
+            inet_ntop(AF_INET, &socketAdress.sin_addr, ipSrc, INET_ADDRSTRLEN);
+            printf("\n----------------\n");
+            printf("ID du flux : %d \n", messSrc[ID_FLUX]);
+            printf("Type du flux : %d\n", messSrc[TYPE]);
+            printf("NUméro de seq %d \n", messSrc[NUM_SEQ]);
+            printf("Numéro d'ack %d \n", messSrc[NUM_ACK]);
+            printf("ECN Enable ? %d \n", messSrc[ECN]);
+            printf("Fenetre Emission %d \n", messSrc[C_WINDOW]);
+            printf("message : %s \n", &messSrc[DATA]);
+            printf("Octet recu : %zd \n", result);
+            printf("Caractère recu : %s \n", ipSrc);
+            printf("Port recu : %hu \n", ntohs(socketAdress.sin_port));
+            printf("\n");
+        }
+    } while (messSrc[TYPE] != 2);
     return 0;
 }
