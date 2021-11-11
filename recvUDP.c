@@ -6,6 +6,9 @@
 #include <stdlib.h>
 #include <time.h>
 
+#define TRUE 1
+#define FALSE 0
+
 #define BUFF 52
 #define ID_FLUX 0
 #define TYPE 1
@@ -42,6 +45,7 @@ int main(int argc, char *argv[]) {
     struct sockaddr_in socketAdressLocal;
     char messSrc[BUFF];
     char messAck[BUFF];
+    int isConEnable = FALSE;
 
     // vérification que le port est été saisie.
     if(port_local == 0 ) {
@@ -56,7 +60,6 @@ int main(int argc, char *argv[]) {
 
     // Initialisation du socket et test d'erreur
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-
     if (sock == -1) {
         perror("Problème au niveau du socket");
         exit(0);
@@ -87,6 +90,7 @@ int main(int argc, char *argv[]) {
             perror("Problème au niveau du résultat");
             exit(0);
         }
+
         // if the type of the message is 1 (SYN), send an acknowledgement with SYN+ACK
         if (messSrc[TYPE] == SYN) {
             messAck[ID_FLUX] = messSrc[ID_FLUX];
@@ -109,6 +113,7 @@ int main(int argc, char *argv[]) {
             }
             if (messSrc[TYPE] == ACK) {
                 printf("Connexion établie cote serveur");
+                isConEnable = TRUE;
             }
         }
 

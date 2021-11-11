@@ -6,6 +6,9 @@
 #include <arpa/inet.h>
 #include <time.h>
 
+#define TRUE 1
+#define FALSE 0
+
 #define BUFF 52
 #define ID_FLUX 0
 #define TYPE 1
@@ -20,7 +23,6 @@
 #define FIN 2
 #define RST 4
 #define ACK 16
-
 
 // ECN type
 #define ECN_ENABLE 1
@@ -43,6 +45,7 @@ int main(int argc, char *argv[]) {
     socklen_t len = sizeof socketAdressLocal;
     char messPertu[BUFF];
     char messLocal[BUFF];
+    int isConEnable = FALSE;
 
     // vérification que le port est été saisie.
     if(port_local == 0 ) {
@@ -106,9 +109,9 @@ int main(int argc, char *argv[]) {
         perror("Erreur au niveau du recvfrom \n");
         exit(0);
     }
-
     if (messPertu[TYPE] == SYN + ACK) {
         printf("Connexion établie du côté de la source");
+        isConEnable = TRUE;
         // send the ACK message
         messLocal[TYPE] = ACK;
         messLocal[NUM_SEQ] = messPertu[NUM_ACK] + 1;
