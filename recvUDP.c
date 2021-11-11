@@ -5,6 +5,7 @@
 #include <arpa/inet.h>
 #include <stdlib.h>
 #include <time.h>
+#include <unistd.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -46,6 +47,10 @@ int main(int argc, char *argv[]) {
     char messSrc[BUFF];
     char messAck[BUFF];
     int isConEnable = FALSE;
+    int numSeq = 0;
+    int nbrTransmissionFailed = 0;
+    FILE * fileToWrite;
+    fileToWrite = fopen("recvUDP.txt", "w");
 
     // vérification que le port est été saisie.
     if(port_local == 0 ) {
@@ -85,21 +90,22 @@ int main(int argc, char *argv[]) {
     }
 
     do {
-        // wait to get the messSrcage from the sender
+        printf("\n----------------\n");
+        // wait to get the message from the sender
         if (recvfrom(sock, messSrc, BUFF, 0, (struct sockaddr*)&socketAdressLocal, &len) == -1) {
             perror("Problème au niveau du résultat");
             exit(0);
         }
+        messAck[ID_FLUX] = messSrc[ID_FLUX];
+        messAck[ECN] = messSrc[ECN];
+        messAck[C_WINDOW] = messSrc[C_WINDOW];
+        messAck[DATA] = 0;
 
         // if the type of the message is 1 (SYN), send an acknowledgement with SYN+ACK
         if (messSrc[TYPE] == SYN) {
-            messAck[ID_FLUX] = messSrc[ID_FLUX];
             messAck[TYPE] = SYN + ACK;
             messAck[NUM_SEQ] = rand() % 256;
             messAck[NUM_ACK] = messSrc[NUM_SEQ] + 1;
-            messAck[ECN] = 0;
-            messAck[C_WINDOW] = messSrc[C_WINDOW];
-            messAck[DATA] = ECN_DISABLE;
             // check if the message was send correctly
             if (sendto(sock, messAck, BUFF, 0, (struct sockaddr*)&socketAdressPertu, len) == -1) {
                 perror("Problème au niveau du sendto");
@@ -117,9 +123,29 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        if (isConEnable == TRUE && messSrc[TYPE] == 0) {
+            printf("numSeq attendu : %d \n", numSeq);
+            if (messSrc[NUM_SEQ] != numSeq) {
+                printf("Message reçu avec numéro de séquence incorrect \n");
+                nbrTransmissionFailed++;
+            } else {
+                fputs(&messSrc[DATA], fileToWrite);
+                numSeq = (numSeq + 1)%2;
+            }
+            // send the ACK to the client
+            messAck[TYPE] = ACK;
+            messAck[NUM_SEQ] = messSrc[NUM_SEQ];
+            messAck[NUM_ACK] = messSrc[NUM_SEQ];
+            if (sendto(sock, messAck, BUFF, 0, (struct sockaddr*)&socketAdressPertu, len) == -1) {
+                perror("Problème au niveau du sendto");
+                exit(0);
+            } else {
+                printf("Message envoyé avec bit à %d \n", messAck[NUM_ACK]);
+            }
+        }
+
         char ipSrc[INET_ADDRSTRLEN];
         inet_ntop(AF_INET, &socketAdressLocal.sin_addr, ipSrc, INET_ADDRSTRLEN);
-        printf("\n----------------\n");
         printf("ID du flux : %d \n", messSrc[ID_FLUX]);
         printf("Type du flux : %d\n", messSrc[TYPE]);
         printf("NUméro de seq %d \n", messSrc[NUM_SEQ]);
@@ -131,5 +157,7 @@ int main(int argc, char *argv[]) {
         printf("Port recu : %hu \n", ntohs(socketAdressLocal.sin_port));
         printf("\n");
     } while (messSrc[TYPE] != FIN);
+    fclose(fileToWrite);
+    printf("\n Incorrect number : %d", nbrTransmissionFailed);
     return 0;
 }

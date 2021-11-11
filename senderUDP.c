@@ -27,6 +27,14 @@
 // ECN type
 #define ECN_ENABLE 1
 #define ECN_DISABLE 0
+
+// mode value
+#define STOP_WAIT "stop-wait"
+#define GO_BACK_N "go-back-n"
+
+// Timer
+// the duration is in seconds
+#define TIMER_DURATION 2
 /*
  * Run with 4 args :
  * - string <mode>
@@ -40,12 +48,17 @@ int main(int argc, char *argv[]) {
     const long port_local = strtol(argv[3], NULL, 10);
     const long port_pertu = strtol(argv[4], NULL, 10);
     const in_addr_t ipDest = inet_addr(argv[2]);
+    char mode[10];
     struct sockaddr_in socketAdressLocal;
     struct sockaddr_in socketAdressPertu;
     socklen_t len = sizeof socketAdressLocal;
     char messPertu[BUFF];
     char messLocal[BUFF];
     int isConEnable = FALSE;
+    fd_set fds;
+    struct timeval timeout;
+    timeout.tv_sec = TIMER_DURATION;
+    timeout.tv_usec = 0;
 
     // vérification que le port est été saisie.
     if(port_local == 0 ) {
@@ -57,12 +70,19 @@ int main(int argc, char *argv[]) {
         perror("Erreur au niveau du port de perturbation \n");
         exit(0);
     }
-
+    // vérification que le mode est saisie est correspond soit à stop-and-wait soit à go-back-n
+    if(strcmp(argv[1], STOP_WAIT) != 0 && strcmp(argv[1], GO_BACK_N) != 0) {
+        perror("Erreur au niveau du mode \n");
+        exit(0);
+    }
+    sprintf(mode, "%s", argv[1]);
     // Initialisation du socket et test d'erreur
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == -1) {
         perror("Problème au niveau du socket \n");
     }
+    FD_ZERO(&fds);
+    FD_SET(sock, &fds);
 
     // définition d'une structure d'adresse avec l'ip de la machine pertubateur
     socketAdressPertu.sin_family = AF_INET;
@@ -122,27 +142,68 @@ int main(int argc, char *argv[]) {
         }
     }
 
+    // Create a Stop-and-wait transmission
+    if (strcmp(mode, STOP_WAIT) == 0) {
+        printf("\n Start stop and wait transmission \n");
+        messLocal[TYPE] = 0;
+        messLocal[NUM_SEQ] = 0;
+        messLocal[NUM_ACK] = 0;
 
-    // Envoie d'une série de message
-//    for (int i = 0; i < 100; ++i) {
-//        // chargement du message
-//        sprintf(&mess[DATA], "%s", "salut les kidou comment ça va ? ");
-//        // Envoie d'un message vers la destination et vérification de l'envoie.
-//        sended = sendto(sock, mess, 52, 0, (struct sockaddr*)&socketAdress, len);
-//        if (sended == -1) {
-//            perror("Problème au niveau de l'envoie");
-//        } else {
-//            printf("Envoie de %zd octet \n", sended);
-//        }
-//    }
-    // Envoie d'un message vde fin de connection.
-//    mess[TYPE] = 2;
-//    sended = sendto(sock, mess, 52, 0, (struct sockaddr*)&socketAdress, len);
-//    if (sended == -1) {
-//        perror("Problème au niveau de l'envoie");
-//    } else {
-//        printf("Envoie de la fin \n");
-//    }
+        // Envoie d'une série de message
+        for (int i = 0; i < 1000; ++i) {
+            printf("----------");
+            printf("\n Send \n");
+            messPertu[TYPE] = 0;
+            // Message à envoyé
+            sprintf(&messLocal[DATA], "%s %d %s", "salut ", i, " fin \n");
+            printf("\n %s \n", &messLocal[DATA]);
+            if (sendto(sock, messLocal, BUFF, 0, (struct sockaddr *) &socketAdressPertu, len) == -1) {
+                perror("Erreur au niveau du sendto \n");
+                exit(0);
+            }
+
+            // get the response message and check if the result is ACK
+            do {
+                timeout.tv_sec = TIMER_DURATION;
+                int r = select(sock + 1, &fds, NULL, NULL, &timeout);
+                if (r == -1) {
+                    perror("Erreur au niveau du select \n");
+                    exit(0);
+                }
+                if (r == 0) {
+                    printf("Timeout : %d \n", i);
+                    if (sendto(sock, messLocal, BUFF, 0, (struct sockaddr *) &socketAdressPertu, len) == -1) {
+                        perror("Erreur au niveau du sendto \n");
+                        exit(0);
+                    }
+                    printf("Resend \n");
+                    // Quand il y'a une timeout, plus aucun ne peut être envoyé.
+                }
+                if (FD_ISSET(sock, &fds)) {
+                    printf("hit");
+                    if (recvfrom(sock, messPertu, BUFF, 0, (struct sockaddr *) &socketAdressLocal, &len) == -1) {
+                        perror("Erreur au niveau du recvfrom \n");
+                        exit(0);
+                    }
+                    if (messPertu[TYPE] == ACK && messPertu[NUM_ACK] == messLocal[NUM_SEQ]) {
+                        printf("\n ACK reçu \n");
+                        messLocal[NUM_SEQ] = (messLocal[NUM_SEQ] + 1) % 2;
+                    } else {
+                        printf("Problème\n");
+                    }
+                }
+            } while(messPertu[TYPE] != ACK);
+        }
+    }
+
+    // Envoie d'un message vide fin de connection.
+    messLocal[TYPE] = 2;
+    sprintf(&messLocal[DATA], "%s", "FIN");
+    if (sendto(sock, messLocal, 52, 0, (struct sockaddr*)&socketAdressPertu, len) == -1) {
+        perror("Problème au niveau de l'envoie");
+    } else {
+        printf("Envoie de la fin \n");
+    }
 
     return 0;
 }
