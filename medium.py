@@ -22,11 +22,11 @@ MAX_PACKETS = 100
 
 def help():
     print("Usage : python3 medium.py [option]\n\n" \
-        "This program is used to simulate loss of congestion (with the ECN mode). In normal mode, generates 30 percents loss when receiving more than 100 packets within a second. In ECN mode, set the ECN bit for the first packet of a time interval of 1 second when receiving more than 100 packets within a second.\n\n" \
-        "\t-v,--verbose\t\tUsed for debug, display the pseudo TCP header for each received packet\n" \
-        "\t-s,--second\t\tDisplay the number of received message each second\n" \
-        "\t-e,--ecn\t\tActivate the ECN mode\n" \
-        "\t-l,--limit [val]\tSet the packet limit rate before loss to the choosen value\n")
+          "This program is used to simulate loss of congestion (with the ECN mode). In normal mode, generates 30 percents loss when receiving more than 100 packets within a second. In ECN mode, set the ECN bit for the first packet of a time interval of 1 second when receiving more than 100 packets within a second.\n\n" \
+          "\t-v,--verbose\t\tUsed for debug, display the pseudo TCP header for each received packet\n" \
+          "\t-s,--second\t\tDisplay the number of received message each second\n" \
+          "\t-e,--ecn\t\tActivate the ECN mode\n" \
+          "\t-l,--limit [val]\tSet the packet limit rate before loss to the choosen value\n")
 
 def parse_type(t):
     ok_ = False
@@ -46,7 +46,7 @@ def parse_type(t):
     if t == 0:
         print(" DATA ", end="")
         ok_ = True
-    
+
     if not ok_:
         print("Unrecognized Type : Please check your packet format", end="")
     print("")
@@ -73,15 +73,15 @@ def parse_new_messages(msg):
     print("Flux ID : {}".format(flux))
     t = msg[1]
     parse_type(t)
-    nchars = 1 # was 1 initialy
-#   string to int or long. Type depends on nchars
+    nchars = 1
+    #   string to int or long. Type depends on nchars
     seq = sum((msg[byte + 2])<<8*(nchars-byte-1) for byte in range(nchars))
     print("SeqNum : {}".format(seq))
-    nchars = 1 # was 1 initialy
-#   string to int or long. Type depends on nchars
+    nchars = 1
+    #   string to int or long. Type depends on nchars
     ack_seq = sum((msg[byte + 4])<<8*(nchars-byte-1) for byte in range(nchars))
     print("Ack seq Num : {}".format(ack_seq))
-    # seq = ord(msg[1:4])
+    #seq = ord(msg[1:4])
     ecn = msg[6]
     parse_ecn(ecn)
     win_size = msg[7]
@@ -95,11 +95,11 @@ def parse_new_messages_server(msg):
     t = msg[1]
     parse_type(t)
     nchars = 1
-#   string to int or long. Type depends on nchars
+    #   string to int or long. Type depends on nchars
     seq = sum((msg[byte + 2])<<8*(nchars-byte-1) for byte in range(nchars))
     print("SeqNum : {}".format(seq))
     nchars = 1
-#   string to int or long. Type depends on nchars
+    #   string to int or long. Type depends on nchars
     ack_seq = sum((msg[byte + 4])<<8*(nchars-byte-1) for byte in range(nchars))
     print("Ack seq Num : {}".format(ack_seq))
     #seq = ord(msg[1:4])
@@ -110,13 +110,13 @@ def parse_new_messages_server(msg):
 
 debug = False
 verb = False
-second = False
+second = 0.0
 ecn = False
 hybride = False
 
 
 
-options, remainder = getopt.getopt(sys.argv[1:], 'dvsehl:', ['debug', 'verbose', 'second', 'ecn', 'help', 'limit=',])
+options, remainder = getopt.getopt(sys.argv[1:], 'dvsehl:', ['debug', 'verbose', 'second=', 'ecn', 'help', 'limit=',])
 
 for opt, arg in options:
     if opt in ('-d', '--debug'):
@@ -124,7 +124,7 @@ for opt, arg in options:
     if opt in ('-v', '--verbose'):
         verb = True
     if opt in ('-s', '--second'):
-        second = True
+        second = float(arg) / 1000.0
     if opt in ('-e','--ecn'):
         ecn = True
     if opt in ('-l','--limit'):
@@ -133,7 +133,7 @@ for opt, arg in options:
         help()
         exit(0)
 
-    
+
 random.seed(time.time())
 
 
@@ -156,14 +156,14 @@ nb_packets = 0
 tagged = False
 
 while con:
-    if act_time + 1 <= time.time():
-        if second :
+    if act_time + second <= time.time():
+        if second != 0.0 :
             print("{} packets received last second".format(nb_packets))
             nb_packets = 0
             act_time = time.time()
         tagged = False
-    
-    i_ready, o_ready, e_ready = select.select(input, [], [], 1.0)
+
+    i_ready, o_ready, e_ready = select.select(input, [], [], second)
 
     for s in i_ready:
         if s == sock_sender:
@@ -184,13 +184,13 @@ while con:
             else:
                 sock_recv.sendto(data, (dest_recv, port_recv))
 
-            
-            
+
+
             if debug :
                 print("message {} received from sender".format(data))
             if verb :
                 parse_new_messages(data)
-            
+
         elif s == sock_recv:
             data, addr = sock_recv.recvfrom(64)
             sock_sender.sendto(data, (dest_sender, port_sender))

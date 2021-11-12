@@ -5,6 +5,8 @@
 #include <string.h>
 #include <arpa/inet.h>
 #include <time.h>
+#include <asm-generic/errno.h>
+#include <errno.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -34,7 +36,7 @@
 
 // Timer
 // the duration is in seconds
-#define TIMER_DURATION 2
+#define TIMER_DURATION 1
 /*
  * Run with 4 args :
  * - string <mode>
@@ -55,7 +57,6 @@ int main(int argc, char *argv[]) {
     char messPertu[BUFF];
     char messLocal[BUFF];
     int isConEnable = FALSE;
-    fd_set fds;
     struct timeval timeout;
     timeout.tv_sec = TIMER_DURATION;
     timeout.tv_usec = 0;
@@ -81,8 +82,10 @@ int main(int argc, char *argv[]) {
     if (sock == -1) {
         perror("Problème au niveau du socket \n");
     }
-    FD_ZERO(&fds);
-    FD_SET(sock, &fds);
+    // ajout d'un timeout sur la socket
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *) &timeout, sizeof(struct timeval)) < 0) {
+        perror("Problème au niveau du timeout \n");
+    }
 
     // définition d'une structure d'adresse avec l'ip de la machine pertubateur
     socketAdressPertu.sin_family = AF_INET;
@@ -150,49 +153,39 @@ int main(int argc, char *argv[]) {
         messLocal[NUM_ACK] = 0;
 
         // Envoie d'une série de message
-        for (int i = 0; i < 1000; ++i) {
-            printf("----------");
-            printf("\n Send \n");
+        for (int i = 0; i < 300; ++i) {
+            printf("\n-----SEND-----\n");
             messPertu[TYPE] = 0;
             // Message à envoyé
             sprintf(&messLocal[DATA], "%s %d %s", "salut ", i, " fin \n");
-            printf("\n %s \n", &messLocal[DATA]);
-            if (sendto(sock, messLocal, BUFF, 0, (struct sockaddr *) &socketAdressPertu, len) == -1) {
-                perror("Erreur au niveau du sendto \n");
-                exit(0);
-            }
+            printf("%s \n", &messLocal[DATA]);
 
-            // get the response message and check if the result is ACK
             do {
-                timeout.tv_sec = TIMER_DURATION;
-                int r = select(sock + 1, &fds, NULL, NULL, &timeout);
-                if (r == -1) {
-                    perror("Erreur au niveau du select \n");
+                // send the message
+                if (sendto(sock, messLocal, BUFF, 0, (struct sockaddr *) &socketAdressPertu, len) == -1) {
+                    perror("Erreur au niveau du sendto \n");
                     exit(0);
                 }
-                if (r == 0) {
-                    printf("Timeout : %d \n", i);
-                    if (sendto(sock, messLocal, BUFF, 0, (struct sockaddr *) &socketAdressPertu, len) == -1) {
-                        perror("Erreur au niveau du sendto \n");
-                        exit(0);
-                    }
-                    printf("Resend \n");
-                    // Quand il y'a une timeout, plus aucun ne peut être envoyé.
-                }
-                if (FD_ISSET(sock, &fds)) {
-                    printf("hit");
-                    if (recvfrom(sock, messPertu, BUFF, 0, (struct sockaddr *) &socketAdressLocal, &len) == -1) {
+
+                // Check if the response has timeout out
+                if (recvfrom(sock, messPertu, BUFF, 0, (struct sockaddr *) &socketAdressLocal, &len) == -1) {
+                    // if the error correspond to EWOULDBLOCK print that
+                    if (errno == EWOULDBLOCK) {
+                        printf("Timeout \n");
+                    } else {
                         perror("Erreur au niveau du recvfrom \n");
                         exit(0);
                     }
+                } else {
+                    // if the response is not a timeout, we're done but we need to check if the ack is correct
                     if (messPertu[TYPE] == ACK && messPertu[NUM_ACK] == messLocal[NUM_SEQ]) {
-                        printf("\n ACK reçu \n");
+                        printf(" ACK reçu \n");
                         messLocal[NUM_SEQ] = (messLocal[NUM_SEQ] + 1) % 2;
                     } else {
-                        printf("Problème\n");
+                        printf("Problème d'ack\n");
                     }
                 }
-            } while(messPertu[TYPE] != ACK);
+            } while (messPertu[TYPE] != ACK);
         }
     }
 
