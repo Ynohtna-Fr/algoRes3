@@ -73,11 +73,11 @@ def parse_new_messages(msg):
     print("Flux ID : {}".format(flux))
     t = msg[1]
     parse_type(t)
-    nchars = 1
+    nchars = 2
     #   string to int or long. Type depends on nchars
     seq = sum((msg[byte + 2])<<8*(nchars-byte-1) for byte in range(nchars))
     print("SeqNum : {}".format(seq))
-    nchars = 1
+    nchars = 2
     #   string to int or long. Type depends on nchars
     ack_seq = sum((msg[byte + 4])<<8*(nchars-byte-1) for byte in range(nchars))
     print("Ack seq Num : {}".format(ack_seq))
@@ -94,11 +94,11 @@ def parse_new_messages_server(msg):
     print("Flux ID : {}".format(flux))
     t = msg[1]
     parse_type(t)
-    nchars = 1
+    nchars = 2
     #   string to int or long. Type depends on nchars
     seq = sum((msg[byte + 2])<<8*(nchars-byte-1) for byte in range(nchars))
     print("SeqNum : {}".format(seq))
-    nchars = 1
+    nchars = 2
     #   string to int or long. Type depends on nchars
     ack_seq = sum((msg[byte + 4])<<8*(nchars-byte-1) for byte in range(nchars))
     print("Ack seq Num : {}".format(ack_seq))
@@ -124,7 +124,7 @@ for opt, arg in options:
     if opt in ('-v', '--verbose'):
         verb = True
     if opt in ('-s', '--second'):
-        second = float(arg) / 1000.0
+        second = True
     if opt in ('-e','--ecn'):
         ecn = True
     if opt in ('-l','--limit'):

@@ -7,11 +7,15 @@
 #include <time.h>
 #include <unistd.h>
 #include <errno.h>
+#include <math.h>
+#include <string.h>
 
 #define TRUE 1
 #define FALSE 0
 
-#define BUFF 52
+#define MESSAGE_BUFF 52
+#define MAX_SEQ 65534
+
 #define ID_FLUX 0
 #define TYPE 1
 #define NUM_SEQ 2
@@ -34,7 +38,20 @@
 // the duration is in seconds
 #define TIMER_DURATION 1
 
-int startConnection(int sock, struct sockaddr_in* socketAdressPertu, struct sockaddr_in* socketAdressLocal, char* messAck, char* messSrc, socklen_t len) {
+typedef struct packet {
+    unsigned char flux_id;
+    unsigned char type;
+    unsigned short seq;
+    unsigned short ack;
+    unsigned char ecn;
+    unsigned char c_window;
+    char data[44];
+} *packet;
+
+int startConnection(int sock, struct sockaddr_in* socketAdressPertu, struct sockaddr_in* socketAdressLocal, packet packetAck, packet packetSrc, socklen_t len) {
+    char messSrc[MESSAGE_BUFF];
+    char messAck[MESSAGE_BUFF];
+
     // add timeout
     struct timeval timeout;
     timeout.tv_sec = TIMER_DURATION;
@@ -44,26 +61,28 @@ int startConnection(int sock, struct sockaddr_in* socketAdressPertu, struct sock
     }
 
     // Prepare the data to send
-    messAck[TYPE] = SYN + ACK;
-    messAck[NUM_SEQ] = rand() % 256;
-    messAck[NUM_ACK] = messSrc[NUM_SEQ] + 1;
-
+    packetAck->type = SYN + ACK;
+    packetAck->seq = rand() % MAX_SEQ;
+    packetAck->ack = packetSrc->seq + 1;
+    memcpy(messAck, packetAck, sizeof(struct packet));
     do {
-        if (sendto(sock, messAck, BUFF, 0, (struct sockaddr*)socketAdressPertu, len) == -1) {
+        if (sendto(sock, messAck, MESSAGE_BUFF, 0, (struct sockaddr*)socketAdressPertu, len) == -1) {
             perror("Problème au niveau du sendto");
             exit(0);
         }
 
         // get the ack from the source
-        if (recvfrom(sock, messSrc, BUFF, 0, (struct sockaddr*)socketAdressLocal, &len) == -1) {
+        if (recvfrom(sock, messSrc, MESSAGE_BUFF, 0, (struct sockaddr*)socketAdressLocal, &len) == -1) {
             if (errno == EWOULDBLOCK) {
                 printf("Timeout \n");
             } else {
                 perror("Erreur au niveau du recvfrom \n");
                 exit(0);
             }
+        } else {
+            memcpy(packetSrc, messSrc, sizeof(struct packet));
         }
-    } while (messSrc[TYPE] != ACK && messSrc[NUM_SEQ] != messAck[NUM_ACK] + 1);
+    } while (packetSrc->type != ACK && packetSrc->seq != packetAck->type + 1);
 
     // delete timeout
     timeout.tv_sec = 0;
@@ -87,10 +106,9 @@ int main(int argc, char *argv[]) {
     const long port_local = strtol(argv[2], NULL, 10);
     const long port_pertu = strtol(argv[3], NULL, 10);
     const in_addr_t ip = inet_addr(argv[1]);
-    struct sockaddr_in socketAdressPertu, socketAdressLocal;
     socklen_t len = sizeof(struct sockaddr_in);
-    char messSrc[BUFF];
-    char messAck[BUFF];
+    packet packetSrc = malloc(sizeof(struct packet));
+    packet packetAck = malloc(sizeof(struct packet));
     int isConEnable = FALSE;
     int nbrTransmissionFailed = 0;
     // log file
@@ -122,13 +140,13 @@ int main(int argc, char *argv[]) {
         perror("Problème au niveau du timeout \n");
     }
 
-    // définition d'une structure d'adresse avec l'ip de la machine
+    // définition d'une structure d'adresse avec l'ip de la machine local et perturbateur
+    struct sockaddr_in socketAdressPertu, socketAdressLocal;
     socketAdressLocal.sin_family = AF_INET;
     socketAdressLocal.sin_addr.s_addr = htonl(ip);;
     socketAdressLocal.sin_port = htons(port_local);
     bzero(&(socketAdressLocal.sin_zero), 8);
 
-    // définition d'une structure d'adresse avec l'ip de la machine pertubateur
     socketAdressPertu.sin_family = AF_INET;
     socketAdressPertu.sin_addr.s_addr = htonl(INADDR_ANY);;
     socketAdressPertu.sin_port = htons(port_pertu);
@@ -142,60 +160,62 @@ int main(int argc, char *argv[]) {
     }
 
     // Démarage de la boucle principal
-    int numSeq = 0;
+    int numSeqSW = 0; // seq number wanted if we'r in stop and wait
+    int numSeqGBN = 0; // seq number wanted if we'r in go back n
+    char messSrc[MESSAGE_BUFF];
+    char messAck[MESSAGE_BUFF];
     do {
         printf("\n----------------\n");
         // wait to get the message from the sender
-        if (recvfrom(sock, messSrc, BUFF, 0, (struct sockaddr*)&socketAdressLocal, &len) == -1) {
+        if (recvfrom(sock, messSrc, MESSAGE_BUFF, 0, (struct sockaddr*)&socketAdressLocal, &len) == -1) {
             perror("Problème au niveau du résultat");
             exit(0);
         }
+        memcpy(packetSrc, messSrc, sizeof(struct packet));
         // Copy the ID, ECN, C_WINDOW and DATA from the source to the serveur.
-        messAck[ID_FLUX] = messSrc[ID_FLUX];
-        messAck[ECN] = messSrc[ECN];
-        messAck[C_WINDOW] = messSrc[C_WINDOW];
-        messAck[DATA] = 0;
+        packetAck->flux_id = packetSrc->flux_id;
+        packetAck->ecn = packetSrc->ecn;
+        packetAck->c_window = packetSrc->c_window;
 
         // if the type of the message is 1 (SYN), send an acknowledgement with SYN+ACK
-        if (messSrc[TYPE] == SYN) {
-            isConEnable = startConnection(sock, &socketAdressPertu, &socketAdressLocal, messAck, messSrc, len);
+        if (packetSrc->type == SYN) {
+            isConEnable = startConnection(sock, &socketAdressPertu, &socketAdressLocal, packetAck, packetSrc, len);
         }
-        exit(0);
-        if (isConEnable == TRUE && messSrc[TYPE] == 0) {
-            printf("numSeq attendu : %d \n", numSeq);
-            if (messSrc[NUM_SEQ] != numSeq) {
+
+        if (isConEnable == TRUE && packetSrc->type == 0) {
+            if (packetSrc->seq != numSeqSW && packetSrc->seq != numSeqGBN) {
                 printf("Message reçu avec numéro de séquence incorrect \n");
                 nbrTransmissionFailed++;
             } else {
-                fputs(&messSrc[DATA], fileToWrite);
-                numSeq = (numSeq + 1)%2;
+                fputs(packetSrc->data, fileToWrite);
+                numSeqSW = (numSeqSW + 1)%2;
+                numSeqGBN = (numSeqGBN + 1)%MAX_SEQ;
             }
+//            sleep(1);
             // send the ACK to the client
-            messAck[TYPE] = ACK;
-            messAck[NUM_SEQ] = messSrc[NUM_SEQ];
-            messAck[NUM_ACK] = messSrc[NUM_SEQ];
-            if (sendto(sock, messAck, BUFF, 0, (struct sockaddr*)&socketAdressPertu, len) == -1) {
+            packetAck->type = ACK;
+            packetAck->seq = packetSrc->seq;
+            packetAck->ack = packetSrc->seq;
+            memcpy(messAck, packetAck, sizeof(struct packet));
+            if (sendto(sock, messAck, MESSAGE_BUFF, 0, (struct sockaddr*)&socketAdressPertu, len) == -1) {
                 perror("Problème au niveau du sendto");
                 exit(0);
             } else {
-                printf("Message envoyé avec bit à %d \n", messAck[NUM_ACK]);
+                printf("Message envoyé avec bit à %d \n", packetAck->ack);
             }
         }
 
-        char ipSrc[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &socketAdressLocal.sin_addr, ipSrc, INET_ADDRSTRLEN);
-        printf("ID du flux : %d \n", messSrc[ID_FLUX]);
-        printf("Type du flux : %d\n", messSrc[TYPE]);
-        printf("NUméro de seq %d \n", messSrc[NUM_SEQ]);
-        printf("Numéro d'ack %d \n", messSrc[NUM_ACK]);
-        printf("ECN Enable ? %d \n", messSrc[ECN]);
-        printf("Fenetre Emission %d \n", messSrc[C_WINDOW]);
-        printf("message : %s \n", &messSrc[DATA]);
-        printf("Caractère recu : %s \n", ipSrc);
-        printf("Port recu : %hu \n", ntohs(socketAdressLocal.sin_port));
+        printf("ID du flux : %d \n", packetSrc->flux_id);
+        printf("Type du flux : %d\n", packetSrc->type);
+        printf("NUméro de seq %d \n", packetSrc->seq);
+        printf("Numéro d'ack %d \n", packetSrc->ack);
+        printf("ECN Enable ? %d \n", packetSrc->ecn);
+        printf("Fenetre Emission %d \n", packetSrc->c_window);
+        printf("message : %s \n", packetSrc->data);
         printf("\n");
-    } while (messSrc[TYPE] != FIN);
-    fclose(fileToWrite);
+    } while (packetSrc->type != FIN);
+
     printf("\n Incorrect number : %d", nbrTransmissionFailed);
+    fclose(fileToWrite);
     return 0;
 }
