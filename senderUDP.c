@@ -42,7 +42,7 @@
 #define GO_BACK_N "go-back-n"
 
 // go back n
-#define WINDOW_SIZE 10
+#define WINDOW_SIZE 50
 
 typedef struct packet {
     unsigned char flux_id;
@@ -59,7 +59,7 @@ void endConnection(int sock, struct sockaddr_in *socketAdressLocal, struct socka
 void flushBuffer(int sock,int c_window, struct sockaddr_in* socketAdressLocal) {
     char messPertu[MESSAGE_BUFF];
     socklen_t len = sizeof(struct sockaddr_in);
-    for (int i = 0; i < c_window; ++i) {
+    for (int i = 0; i < MESSAGE_BUFF; ++i) {
         // on lis dans le vide pour vidé le buffer de la socket
         if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
             if (errno != EWOULDBLOCK) {
@@ -179,7 +179,6 @@ void stopAndWait(const int sock, struct sockaddr_in* socketAdressLocal, struct s
 }
 
 void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in *socketAdressPertu) {
-    packet packetLocal = malloc(sizeof(struct packet));
     packet packetPertu = malloc(sizeof(struct packet));
     char messPertu[MESSAGE_BUFF];
     char messLocal[MESSAGE_BUFF];
@@ -192,7 +191,7 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
     int last_ack = 0;
     int ackAlreadyGet = 0;
     int duplicatedAck = 0;
-    struct timeval timeout = {0, 10};
+    struct timeval timeout = {0, 5000};
     int end = FALSE;
 
     // modification du timeout sur la socket afin de simuler du non bloquant
@@ -273,7 +272,7 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                 }
                 // si ça correspond à 0, on le traite normalement
                 if (missingAck == 0) {
-                    if (c_window < 10) {
+                    if (c_window < (WINDOW_SIZE - 1)) {
                         c_window++;
                         current_open_slot++;
                     }
@@ -282,7 +281,7 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                 }
                 // si on à une différence, on acquitte la séquence.
                 for (int i = 0; i < missingAck; ++i) {
-                    if (c_window < 10) {
+                    if (c_window < (WINDOW_SIZE - 1)) {
                         c_window++;
                         current_open_slot++;
                     }
@@ -306,7 +305,7 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                     }
                 }
             } else if (packetPertu->ack > ackAlreadyGet) {
-                if (c_window < 10) {
+                if (c_window < (WINDOW_SIZE - 1)) {
                     c_window++;
                     current_open_slot++;
                 }
@@ -323,19 +322,12 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
             if (packetPertu->ack >= ackAlreadyGet) {
                 last_ack = packetPertu->ack;
             }
-            if (packetPertu->ack >= 1000) {
+            if (packetPertu->ack >= 10000) {
                 end = TRUE;
             }
             printf("Congestion window : %d | current_open_slot : %d | last_ack : %d \n", c_window, current_open_slot, last_ack);
         }
     } while (end == FALSE);
-
-// Remise de la socket en l'état les
-    timeout.tv_sec = TIMER_DURATION;
-    timeout.tv_usec = 0;
-    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *) &timeout, sizeof(struct timeval)) < 0) {
-        perror("Problème au niveau du timeout \n");
-    }
 }
 
 void endConnection(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in *socketAdressPertu) {
