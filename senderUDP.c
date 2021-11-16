@@ -190,6 +190,7 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
     int packetLocalNum = 0;
     int last_ack = 0;
     int ackAlreadyGet = 0;
+    int duplicatedAck = 0;
     struct timeval timeout = {0, 10};
     int end = FALSE;
 
@@ -230,6 +231,17 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
         if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
             if (errno == EWOULDBLOCK) {
                 printf("-------Timeout------ \n");
+                // division par deux de la congestion window mais avant, on doit renvoyé les packets
+                for (int i = 0; i < c_window; ++i) {
+                    // on lis dans le vide pour vidé le buffer de la socket
+                    if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
+                        if (errno != EWOULDBLOCK) {
+                            perror("Erreur au niveau du recvfrom \n");
+                            exit(0);
+                        }
+                    }
+                }
+                c_window = c_window / 2;
                 printf("Congestion window : %d | current_open_slot : %d | last_ack : %d \n", c_window, current_open_slot, last_ack);
             } else {
                 perror("Erreur au niveau du recvfrom \n");
@@ -266,10 +278,21 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                     current_open_slot++;
                     ackAlreadyGet++;
                 }
-                // si on à une perte d'ack et qu'on nous renvoie le même, on re-send notre fenêtre de congestion
+                // si on à une perte d'ack et qu'on nous renvoie le même, on re-send notre fenêtre de congestion.
+                // on vide également le buffer afin de ne pas recevoir les anciens acki.
             } if (packetPertu->ack == last_ack) {
+                duplicatedAck++;
                 printf("wrong ACK \n");
                 printf("Congestion window : %d | current_open_slot : %d | last_ack : %d \n", c_window, current_open_slot, last_ack);
+                for (int i = 0; i < c_window; ++i) {
+                    // on lis dans le vide pour vidé le buffer de la socket
+                    if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
+                        if (errno != EWOULDBLOCK) {
+                            perror("Erreur au niveau du recvfrom \n");
+                            exit(0);
+                        }
+                    }
+                }
                 for (int i = last_ack + 1; i < last_ack + c_window; i++) {
                     printf("%s \n", slidingWindows[i % WINDOW_SIZE]->data);
                     memcpy(messLocal, slidingWindows[i % WINDOW_SIZE], sizeof(struct packet));
@@ -277,6 +300,10 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                         perror("Erreur au niveau du sendto \n");
                         exit(0);
                     }
+                }
+                if (duplicatedAck == 3) {
+                    printf("Too much duplicated ACK \n");
+                    // faire un truc ?
                 }
             } else if (packetPertu->ack > ackAlreadyGet) {
                 if (c_window < 10) {
@@ -289,14 +316,14 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
             if (packetPertu->ack >= ackAlreadyGet) {
                 last_ack = packetPertu->ack;
             }
-            if (packetPertu->ack >= 100) {
+            if (packetPertu->ack >= 1000) {
                 end = TRUE;
             }
             printf("Congestion window : %d | current_open_slot : %d | last_ack : %d \n", c_window, current_open_slot, last_ack);
         }
     } while (end == FALSE);
 
-    // Remise de la socket en l'état les
+// Remise de la socket en l'état les
     timeout.tv_sec = TIMER_DURATION;
     timeout.tv_usec = 0;
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *) &timeout, sizeof(struct timeval)) < 0) {

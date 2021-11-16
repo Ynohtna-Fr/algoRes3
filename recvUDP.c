@@ -195,9 +195,9 @@ int main(int argc, char *argv[]) {
             // send the ACK to the client
             packetAck->type = ACK;
             packetAck->seq = packetSrc->seq;
-            if (packetSrc->seq > 1) {
+            if (packetSrc->seq > 1) { // ça veut dire qu'on est en go back n
                 packetAck->ack = numSeqGBN -1 ;
-            } else {
+            } else { // ça veut dire qu'on est en stop and wait
                 packetAck->ack = numSeqSW;
             }
             memcpy(messAck, packetAck, sizeof(struct packet));
