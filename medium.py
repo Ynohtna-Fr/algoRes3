@@ -24,8 +24,8 @@ def help():
     print("Usage : python3 medium.py [option]\n\n" \
           "This program is used to simulate loss of congestion (with the ECN mode). In normal mode, generates 30 percents loss when receiving more than 100 packets within a second. In ECN mode, set the ECN bit for the first packet of a time interval of 1 second when receiving more than 100 packets within a second.\n\n" \
           "\t-v,--verbose\t\tUsed for debug, display the pseudo TCP header for each received packet\n" \
-          "\t-s,--second\t\tDisplay the number of received message each second\n" \
-          "\t-e,--ecn\t\tActivate the ECN mode\n" \
+          "\t-s [x],--second=[x]\t\tDisplay the number of received message each x millisecond\n" \
+          "\t-e [x],--ecn=[x]\t\tActivate the ECN mode and send the ECN bit for the first packet of each x milliseconds\n" \
           "\t-l,--limit [val]\tSet the packet limit rate before loss to the choosen value\n")
 
 def parse_type(t):
@@ -111,12 +111,13 @@ def parse_new_messages_server(msg):
 debug = False
 verb = False
 second = 0.0
-ecn = False
+ecn = 0.0
+ecn_enable = False
 hybride = False
 
 
 
-options, remainder = getopt.getopt(sys.argv[1:], 'dvsehl:', ['debug', 'verbose', 'second=', 'ecn', 'help', 'limit=',])
+options, remainder = getopt.getopt(sys.argv[1:], 'dvs:e:hl:', ['debug', 'verbose', 'second=', 'ecn=', 'help', 'limit=',])
 
 for opt, arg in options:
     if opt in ('-d', '--debug'):
@@ -124,9 +125,9 @@ for opt, arg in options:
     if opt in ('-v', '--verbose'):
         verb = True
     if opt in ('-s', '--second'):
-        second = True
+        second = float(arg) / 1000.0
     if opt in ('-e','--ecn'):
-        ecn = True
+        ecn = float(arg) / 1000.0
     if opt in ('-l','--limit'):
         MAX_PACKETS = int(arg)
     if opt in ('-h', '--help'):
@@ -152,16 +153,30 @@ input = [ sock_sender, sock_recv , sys.stdin ]
 
 con = True
 act_time = time.time()
+sec_time = time.time()
+ecn_time = time.time()
 nb_packets = 0
 tagged = False
+nb_packets_per_sec = 0
 
 while con:
+    # Reload the number of packet per seconds (for generated failures)
+    if sec_time + 1.0 <= time.time():
+        nb_packets_per_sec = 0
+        sec_time = time.time()
+
+    # Each tick stamp, print the number of received packets
     if act_time + second <= time.time():
         if second != 0.0 :
-            print("{} packets received last second".format(nb_packets))
+            print("{} packets received last {} ms".format(nb_packets, second))
             nb_packets = 0
             act_time = time.time()
-        tagged = False
+
+    if ecn != 0.0:
+        if ecn_time + ecn <= time.time():
+            ecn_time = time.time()
+            tagged = False
+
 
     i_ready, o_ready, e_ready = select.select(input, [], [], second)
 
@@ -169,19 +184,21 @@ while con:
         if s == sock_sender:
             data, addr = sock_sender.recvfrom(64)
 
-            nb_packets += 1
-            if nb_packets > MAX_PACKETS:
-                if ecn :
-                    if not tagged:
-                        data_tmp = bytearray(data)
-                        data_tmp[6] = ECN_ACTIVE
-                        data = bytes(data_tmp)
-                        tagged = True
+
+            nb_packets_per_sec += 1
+            if nb_packets_per_sec > MAX_PACKETS:
+                if random.random() <= 0.7:
+                    nb_packets += 1
+                    if ecn != 0.0 :
+                        if not tagged:
+                            data_tmp = bytearray(data)
+                            data_tmp[6] = ECN_ACTIVE
+                            data = bytes(data_tmp)
+                            tagged = True
                     sock_recv.sendto(data, (dest_recv, port_recv))
-                else:
-                    if random.random() <= 0.7:
-                        sock_recv.sendto(data, (dest_recv, port_recv))
+
             else:
+                nb_packets += 1
                 sock_recv.sendto(data, (dest_recv, port_recv))
 
 

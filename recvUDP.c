@@ -195,7 +195,11 @@ int main(int argc, char *argv[]) {
             // send the ACK to the client
             packetAck->type = ACK;
             packetAck->seq = packetSrc->seq;
-            packetAck->ack = packetSrc->seq;
+            if (packetSrc->seq > 1) {
+                packetAck->ack = numSeqGBN -1 ;
+            } else {
+                packetAck->ack = numSeqSW;
+            }
             memcpy(messAck, packetAck, sizeof(struct packet));
             if (sendto(sock, messAck, MESSAGE_BUFF, 0, (struct sockaddr*)&socketAdressPertu, len) == -1) {
                 perror("Problème au niveau du sendto");
