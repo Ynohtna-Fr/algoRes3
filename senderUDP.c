@@ -7,6 +7,7 @@
 #include <time.h>
 #include <asm-generic/errno.h>
 #include <errno.h>
+#include <math.h>
 
 #define TRUE 1
 #define FALSE 0
@@ -55,6 +56,20 @@ typedef struct packet {
 
 void endConnection(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in *socketAdressPertu);
 
+void flushBuffer(int sock,int c_window, struct sockaddr_in* socketAdressLocal) {
+    char messPertu[MESSAGE_BUFF];
+    socklen_t len = sizeof(struct sockaddr_in);
+    for (int i = 0; i < c_window; ++i) {
+        // on lis dans le vide pour vidé le buffer de la socket
+        if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
+            if (errno != EWOULDBLOCK) {
+                perror("Erreur au niveau du recvfrom \n");
+                exit(0);
+            }
+        }
+    }
+}
+
 // start the connection with a 3-way handshake
 int startConnection (const int sock, struct sockaddr_in* socketAdressLocal, struct sockaddr_in* socketAdressPertu) {
     packet packetLocal = malloc(sizeof(struct packet));
@@ -62,20 +77,6 @@ int startConnection (const int sock, struct sockaddr_in* socketAdressLocal, stru
     char messPertu[MESSAGE_BUFF];
     char messLocal[MESSAGE_BUFF];
     socklen_t len = sizeof(struct sockaddr_in);
-    // Id du Flux
-    messLocal[ID_FLUX] = 1;
-    // Type
-    messLocal[TYPE] = SYN;
-    // num séquence
-    messLocal[NUM_SEQ] = rand() % 256;
-    // num Acquittement
-    messLocal[NUM_ACK] = 0;
-    // ECN
-    messLocal[ECN] = ECN_DISABLE;
-    // Fen. Emission
-    messLocal[E_WINDOW] = 1;
-    // Reset the type
-    messPertu[TYPE] = 0;
 
     packetLocal->flux_id = 1;
     packetLocal->type = SYN;
@@ -223,7 +224,7 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                 exit(0);
             }
             packetLocalNum = packetLocalNum+ 1;
-            packetNum = (packetNum + 1) % 10;
+            packetNum = (packetNum + 1) % WINDOW_SIZE;
             current_open_slot--;
             printf("Congestion window : %d | current_open_slot : %d | last_ack : %d \n", c_window, current_open_slot, last_ack);
         }
@@ -231,17 +232,27 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
         if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
             if (errno == EWOULDBLOCK) {
                 printf("-------Timeout------ \n");
-                // division par deux de la congestion window mais avant, on doit renvoyé les packets
-                for (int i = 0; i < c_window; ++i) {
-                    // on lis dans le vide pour vidé le buffer de la socket
-                    if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
-                        if (errno != EWOULDBLOCK) {
-                            perror("Erreur au niveau du recvfrom \n");
-                            exit(0);
-                        }
+                // division par deux de la congestion window
+                flushBuffer(sock, c_window, socketAdressLocal);
+
+                if (c_window % 2 == 0) {
+                    c_window = c_window / 2;
+                    packetLocalNum = (packetLocalNum - c_window) + 1;
+                } else {
+                    c_window = (c_window - 1) / 2; // on l'arrondie a l'entier inférieur
+                    packetLocalNum = packetLocalNum - c_window;
+                }
+                current_open_slot = 0;
+
+                // on renvoit les données dans notre fenêtre de congestion
+                for (int i = last_ack + 1; i < last_ack + c_window; i++) {
+                    printf("%s \n", slidingWindows[i % WINDOW_SIZE]->data);
+                    memcpy(messLocal, slidingWindows[i % WINDOW_SIZE], sizeof(struct packet));
+                    if (sendto(sock, messLocal, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressPertu, len) == -1) {
+                        perror("Erreur au niveau du sendto \n");
+                        exit(0);
                     }
                 }
-                c_window = c_window / 2;
                 printf("Congestion window : %d | current_open_slot : %d | last_ack : %d \n", c_window, current_open_slot, last_ack);
             } else {
                 perror("Erreur au niveau du recvfrom \n");
@@ -280,19 +291,12 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                 }
                 // si on à une perte d'ack et qu'on nous renvoie le même, on re-send notre fenêtre de congestion.
                 // on vide également le buffer afin de ne pas recevoir les anciens acki.
-            } if (packetPertu->ack == last_ack) {
+            } else if (packetPertu->ack == last_ack) {
                 duplicatedAck++;
                 printf("wrong ACK \n");
                 printf("Congestion window : %d | current_open_slot : %d | last_ack : %d \n", c_window, current_open_slot, last_ack);
-                for (int i = 0; i < c_window; ++i) {
-                    // on lis dans le vide pour vidé le buffer de la socket
-                    if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
-                        if (errno != EWOULDBLOCK) {
-                            perror("Erreur au niveau du recvfrom \n");
-                            exit(0);
-                        }
-                    }
-                }
+                flushBuffer(sock, c_window, socketAdressLocal);
+
                 for (int i = last_ack + 1; i < last_ack + c_window; i++) {
                     printf("%s \n", slidingWindows[i % WINDOW_SIZE]->data);
                     memcpy(messLocal, slidingWindows[i % WINDOW_SIZE], sizeof(struct packet));
@@ -301,10 +305,6 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                         exit(0);
                     }
                 }
-                if (duplicatedAck == 3) {
-                    printf("Too much duplicated ACK \n");
-                    // faire un truc ?
-                }
             } else if (packetPertu->ack > ackAlreadyGet) {
                 if (c_window < 10) {
                     c_window++;
@@ -312,6 +312,13 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                 }
                 current_open_slot++;
                 ackAlreadyGet++;
+            }
+            if (packetPertu->ecn > 0) {
+                printf("ECN \n");
+                c_window = c_window - (c_window - floor(c_window * 0.9));
+                if (current_open_slot != 0) {
+                    current_open_slot--;
+                }
             }
             if (packetPertu->ack >= ackAlreadyGet) {
                 last_ack = packetPertu->ack;

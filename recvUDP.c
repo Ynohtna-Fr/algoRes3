@@ -191,7 +191,6 @@ int main(int argc, char *argv[]) {
                 numSeqSW = (numSeqSW + 1)%2;
                 numSeqGBN = (numSeqGBN + 1)%MAX_SEQ;
             }
-//            sleep(1);
             // send the ACK to the client
             packetAck->type = ACK;
             packetAck->seq = packetSrc->seq;
