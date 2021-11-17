@@ -189,7 +189,6 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
     int packetLocalNum = 0;
     int last_ack = 0;
     int ackAlreadyGet = 0;
-    int duplicatedAck = 0;
     struct timeval timeout = {0, 5000};
     int end = FALSE;
     FILE * fileToWrite;
