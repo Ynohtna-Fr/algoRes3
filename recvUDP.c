@@ -16,14 +16,6 @@
 #define MESSAGE_BUFF 52
 #define MAX_SEQ 65534
 
-#define ID_FLUX 0
-#define TYPE 1
-#define NUM_SEQ 2
-#define NUM_ACK 4
-#define ECN 6
-#define C_WINDOW 7
-#define DATA 8
-
 // DataType
 #define SYN 1
 #define FIN 2
@@ -44,7 +36,7 @@ typedef struct packet {
     unsigned short seq;
     unsigned short ack;
     unsigned char ecn;
-    unsigned char c_window;
+    unsigned char e_window;
     char data[44];
 } *packet;
 
@@ -94,6 +86,53 @@ int startConnection(int sock, struct sockaddr_in* socketAdressPertu, struct sock
     return TRUE;
 }
 
+int endConnection(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in *socketAdressPertu, packet packetPertu) {
+    packet packetLocal = malloc(sizeof(struct packet));
+    char messPertu[MESSAGE_BUFF];
+    char messLocal[MESSAGE_BUFF];
+    socklen_t len = sizeof(struct sockaddr_in);
+
+    printf("seq : %d, type : %d, ack : %d \n", packetPertu->seq, packetPertu->type, packetPertu->ack);
+    // packet initialization
+    packetLocal->flux_id = 1;
+    packetLocal->type = ACK;
+    packetLocal->seq = packetPertu->seq;
+    packetLocal->ack = packetPertu->seq + 1;
+    packetLocal->ecn = ECN_DISABLE;
+    packetLocal->e_window = 1;
+    sprintf(packetLocal->data, "%s", "FIN");
+    memcpy(messLocal, packetLocal, sizeof(struct packet));
+    // send the packet
+    if (sendto(sock, messLocal, MESSAGE_BUFF, 0, (struct sockaddr*)socketAdressPertu, len) == -1) {
+        perror("Problème au niveau du sendto");
+        exit(0);
+    }
+
+    packetLocal->type = FIN;
+    packetLocal->seq = rand() % MAX_SEQ;
+    memcpy(messLocal, packetLocal, sizeof(struct packet));
+    do {
+        if (sendto(sock, messLocal, MESSAGE_BUFF, 0, (struct sockaddr*)socketAdressPertu, len) == -1) {
+            perror("Problème au niveau du sendto");
+            exit(0);
+        }
+        // recv the ack from the source
+        if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr*)socketAdressLocal, &len) == -1) {
+            if (errno == EWOULDBLOCK) {
+                printf("Timeout \n");
+            } else {
+                perror("Erreur au niveau du recvfrom \n");
+                exit(0);
+            }
+        } else {
+            memcpy(packetPertu, messPertu, sizeof(struct packet));
+        }
+    } while (packetPertu->type != ACK && packetPertu->ack != packetLocal->seq + 1);
+
+    return TRUE;
+}
+
+
 /*
  * Run with 3 args :
  * - string <ip_dest>
@@ -110,6 +149,7 @@ int main(int argc, char *argv[]) {
     packet packetSrc = malloc(sizeof(struct packet));
     packet packetAck = malloc(sizeof(struct packet));
     int isConEnable = FALSE;
+    int end = FALSE;
     int nbrTransmissionFailed = 0;
     // log file
     FILE * fileToWrite;
@@ -164,7 +204,10 @@ int main(int argc, char *argv[]) {
     int numSeqGBN = 0; // seq number wanted if we'r in go back n
     char messSrc[MESSAGE_BUFF];
     char messAck[MESSAGE_BUFF];
+    char messToPrint[MESSAGE_BUFF];
     do {
+        time_t timestamp = time( NULL );
+        packetSrc->seq = 0;
         printf("\n----------------\n");
         // wait to get the message from the sender
         if (recvfrom(sock, messSrc, MESSAGE_BUFF, 0, (struct sockaddr*)&socketAdressLocal, &len) == -1) {
@@ -175,8 +218,8 @@ int main(int argc, char *argv[]) {
         // Copy the ID, ECN, C_WINDOW and DATA from the source to the serveur.
         packetAck->flux_id = packetSrc->flux_id;
         packetAck->ecn = packetSrc->ecn;
-        packetAck->c_window = packetSrc->c_window;
-
+        packetAck->e_window = packetSrc->e_window;
+        packetAck->ack = 0;
         // if the type of the message is 1 (SYN), send an acknowledgement with SYN+ACK
         if (packetSrc->type == SYN) {
             isConEnable = startConnection(sock, &socketAdressPertu, &socketAdressLocal, packetAck, packetSrc, len);
@@ -186,18 +229,18 @@ int main(int argc, char *argv[]) {
             if (packetSrc->seq != numSeqSW && packetSrc->seq != numSeqGBN) {
                 printf("Message reçu avec numéro de séquence incorrect \n");
                 nbrTransmissionFailed++;
+                sprintf(messToPrint, "%ld, %d, false\n", timestamp, packetSrc->seq);
             } else {
-                fputs(packetSrc->data, fileToWrite);
+                sprintf(messToPrint, "%ld, %d, true\n", timestamp, packetSrc->seq);
                 numSeqSW = (numSeqSW + 1)%2;
                 numSeqGBN = (numSeqGBN + 1)%MAX_SEQ;
             }
+            fputs(messToPrint, fileToWrite);
             // send the ACK to the client
             packetAck->type = ACK;
-            packetAck->seq = packetSrc->seq;
+            packetAck->ack = packetSrc->seq;
             if (packetSrc->seq > 1) { // ça veut dire qu'on est en go back n
                 packetAck->ack = numSeqGBN -1 ;
-            } else { // ça veut dire qu'on est en stop and wait
-                packetAck->ack = numSeqSW;
             }
             memcpy(messAck, packetAck, sizeof(struct packet));
             if (sendto(sock, messAck, MESSAGE_BUFF, 0, (struct sockaddr*)&socketAdressPertu, len) == -1) {
@@ -208,15 +251,19 @@ int main(int argc, char *argv[]) {
             }
         }
 
+        if (isConEnable == TRUE && packetSrc->type == FIN) {
+            end = endConnection(sock, &socketAdressLocal, &socketAdressPertu, packetSrc);
+        }
+
         printf("ID du flux : %d \n", packetSrc->flux_id);
         printf("Type du flux : %d\n", packetSrc->type);
         printf("NUméro de seq %d \n", packetSrc->seq);
         printf("Numéro d'ack %d \n", packetSrc->ack);
         printf("ECN Enable ? %d \n", packetSrc->ecn);
-        printf("Fenetre Emission %d \n", packetSrc->c_window);
+        printf("Fenetre Emission %d \n", packetSrc->e_window);
         printf("message : %s \n", packetSrc->data);
         printf("\n");
-    } while (packetSrc->type != FIN);
+    } while (end == FALSE);
 
     printf("\n Incorrect number : %d", nbrTransmissionFailed);
     fclose(fileToWrite);

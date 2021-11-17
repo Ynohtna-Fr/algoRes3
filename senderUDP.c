@@ -15,14 +15,6 @@
 #define MESSAGE_BUFF 52
 #define MAX_SEQ 65534
 
-#define ID_FLUX 0
-#define TYPE 1
-#define NUM_SEQ 2
-#define NUM_ACK 4
-#define ECN 6
-#define E_WINDOW 7
-#define DATA 8
-
 // DataType
 #define SYN 1
 #define FIN 2
@@ -42,7 +34,7 @@
 #define GO_BACK_N "go-back-n"
 
 // go back n
-#define WINDOW_SIZE 50
+#define WINDOW_SIZE 10
 
 typedef struct packet {
     unsigned char flux_id;
@@ -53,8 +45,6 @@ typedef struct packet {
     unsigned char e_window;
     char data[44];
 } *packet;
-
-void endConnection(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in *socketAdressPertu);
 
 void flushBuffer(int sock,int c_window, struct sockaddr_in* socketAdressLocal) {
     char messPertu[MESSAGE_BUFF];
@@ -83,7 +73,7 @@ int startConnection (const int sock, struct sockaddr_in* socketAdressLocal, stru
     packetLocal->seq = rand() % MAX_SEQ;
     packetLocal->ack = 0;
     packetLocal->ecn = ECN_DISABLE;
-    packetLocal->e_window = MESSAGE_BUFF;
+    packetLocal->e_window = WINDOW_SIZE;
     memcpy(messLocal, packetLocal, sizeof(struct packet));
     do {
         // send a the SYN message
@@ -124,7 +114,11 @@ void stopAndWait(const int sock, struct sockaddr_in* socketAdressLocal, struct s
     packet packetPertu = malloc(sizeof(struct packet));
     char messPertu[MESSAGE_BUFF];
     char messLocal[MESSAGE_BUFF];
+    char messToPrint[MESSAGE_BUFF];
     socklen_t len = sizeof(struct sockaddr_in);
+    // log file
+    FILE * fileToWrite;
+    fileToWrite = fopen("sendUDP.txt", "w");
 
     // packet initialization
     packetLocal->flux_id = 1;
@@ -137,7 +131,8 @@ void stopAndWait(const int sock, struct sockaddr_in* socketAdressLocal, struct s
     printf("\n Start stop and wait transmission \n");
 
     // Envoie d'une série de message
-    for (int i = 0; i < 300; ++i) {
+    for (int i = 0; i < 100; ++i) {
+        time_t timestamp = time( NULL );
         printf("\n-----SEND-----\n");
         // reinitialisation du type de paquet reçu
         packetPertu->type = 0;
@@ -160,6 +155,7 @@ void stopAndWait(const int sock, struct sockaddr_in* socketAdressLocal, struct s
                 // if the error correspond to EWOULDBLOCK print that
                 if (errno == EWOULDBLOCK) {
                     printf("Timeout \n");
+                    sprintf(messToPrint, "%ld, %d, false\n", timestamp, packetLocal->seq);
                 } else {
                     perror("Erreur au niveau du recvfrom \n");
                     exit(0);
@@ -169,11 +165,13 @@ void stopAndWait(const int sock, struct sockaddr_in* socketAdressLocal, struct s
                 // if the response is not a timeout, we're done but we need to check if the ack is correct
                 if (packetPertu->type == ACK && packetPertu->ack == packetLocal->seq) {
                     printf(" ACK reçu \n");
+                    sprintf(messToPrint, "%ld, %d, true\n", timestamp, packetLocal->seq);
                     packetLocal->seq = (packetLocal->seq + 1) % 2;
                 } else {
                     printf("Problème d'ack\n");
                 }
             }
+            fputs(messToPrint, fileToWrite);
         } while (packetPertu->type != ACK);
     }
 }
@@ -182,6 +180,7 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
     packet packetPertu = malloc(sizeof(struct packet));
     char messPertu[MESSAGE_BUFF];
     char messLocal[MESSAGE_BUFF];
+    char messToPrint[MESSAGE_BUFF];
     socklen_t len = sizeof(struct sockaddr_in);
     packet slidingWindows[WINDOW_SIZE] = { NULL };
     int c_window = 3;
@@ -193,6 +192,8 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
     int duplicatedAck = 0;
     struct timeval timeout = {0, 5000};
     int end = FALSE;
+    FILE * fileToWrite;
+    fileToWrite = fopen("sendUDP.txt", "w");
 
     // modification du timeout sur la socket afin de simuler du non bloquant
     if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *) &timeout, sizeof(struct timeval)) < 0) {
@@ -206,13 +207,14 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
     // Envoie d'une série de message
     do {
         while (current_open_slot > 0) {
+            time_t timestamp = time( NULL );
             // packet initialization
             slidingWindows[packetNum]->flux_id = 1;
             slidingWindows[packetNum]->type = 0;
             slidingWindows[packetNum]->seq = packetLocalNum;
             slidingWindows[packetNum]->ack = 0;
             slidingWindows[packetNum]->ecn = ECN_DISABLE;
-            slidingWindows[packetNum]->e_window = 1;
+            slidingWindows[packetNum]->e_window = WINDOW_SIZE;
             // send message
             printf("-------SEND----- \n");
             sprintf(slidingWindows[packetNum]->data, "%s %d %s", "salut ", slidingWindows[packetNum]->seq, " GBN \n");
@@ -222,6 +224,7 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                 perror("Erreur au niveau du sendto \n");
                 exit(0);
             }
+            sprintf(messToPrint, "%ld, %d, send\n", timestamp, packetLocalNum);
             packetLocalNum = packetLocalNum+ 1;
             packetNum = (packetNum + 1) % WINDOW_SIZE;
             current_open_slot--;
@@ -272,27 +275,39 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                 }
                 // si ça correspond à 0, on le traite normalement
                 if (missingAck == 0) {
+                    time_t timestamp = time(NULL);
                     if (c_window < (WINDOW_SIZE - 1)) {
                         c_window++;
                         current_open_slot++;
+                        sprintf(messToPrint, "%ld, %d, C_UP\n", timestamp, packetPertu->ack);
+                        fputs(messToPrint, fileToWrite);
                     }
                     current_open_slot++;
                     ackAlreadyGet++;
+                    sprintf(messToPrint, "%ld, %d, ack\n", timestamp, packetPertu->ack);
+                    fputs(messToPrint, fileToWrite);
                 }
                 // si on à une différence, on acquitte la séquence.
                 for (int i = 0; i < missingAck; ++i) {
+                    time_t timestamp = time(NULL);
                     if (c_window < (WINDOW_SIZE - 1)) {
                         c_window++;
+                        sprintf(messToPrint, "%ld, %d, C_UP\n", timestamp, packetPertu->ack);
+                        fputs(messToPrint, fileToWrite);
                         current_open_slot++;
                     }
                     current_open_slot++;
                     ackAlreadyGet++;
+                    sprintf(messToPrint, "%ld, %d, ack\n", timestamp, ((last_ack + 1) + i));
+                    fputs(messToPrint, fileToWrite);
                 }
                 // si on à une perte d'ack et qu'on nous renvoie le même, on re-send notre fenêtre de congestion.
                 // on vide également le buffer afin de ne pas recevoir les anciens acki.
             } else if (packetPertu->ack == last_ack) {
-                duplicatedAck++;
+                time_t timestamp = time( NULL );
                 printf("wrong ACK \n");
+                sprintf(messToPrint, "%ld, %d, WACK\n", timestamp, last_ack);
+                fputs(messToPrint, fileToWrite);
                 printf("Congestion window : %d | current_open_slot : %d | last_ack : %d \n", c_window, current_open_slot, last_ack);
                 flushBuffer(sock, c_window, socketAdressLocal);
 
@@ -303,18 +318,35 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
                         perror("Erreur au niveau du sendto \n");
                         exit(0);
                     }
+                    sprintf(messToPrint, "%ld, %d, Rsend\n", timestamp, slidingWindows[i % WINDOW_SIZE]->seq);
+                    fputs(messToPrint, fileToWrite);
                 }
             } else if (packetPertu->ack > ackAlreadyGet) {
+                time_t timestamp = time(NULL);
+                sprintf(messToPrint, "%ld, %d, ack \n", timestamp, packetPertu->ack);
+                fputs(messToPrint, fileToWrite);
                 if (c_window < (WINDOW_SIZE - 1)) {
                     c_window++;
+                    sprintf(messToPrint, "%ld, %d, C_UP\n", timestamp, packetPertu->ack);
+                    fputs(messToPrint, fileToWrite);
                     current_open_slot++;
                 }
                 current_open_slot++;
                 ackAlreadyGet++;
             }
             if (packetPertu->ecn > 0) {
+                time_t timestamp = time(NULL);
+                sprintf(messToPrint, "%ld, %d, ecn \n", timestamp, packetPertu->ack);
+                fputs(messToPrint, fileToWrite);
                 printf("ECN \n");
-                c_window = c_window - (c_window - floor(c_window * 0.9));
+                if (c_window % 2 == 0) {
+                    (packetLocalNum - (c_window - floor(c_window * 0.9))) + 1;
+                } else {
+                    packetLocalNum = (packetLocalNum - (c_window - floor(c_window * 0.9)));
+                }
+                c_window = floor(c_window * 0.9);
+                sprintf(messToPrint, "%ld, %d, C_D\n", timestamp, packetPertu->ack);
+                fputs(messToPrint, fileToWrite);
                 if (current_open_slot != 0) {
                     current_open_slot--;
                 }
@@ -322,7 +354,7 @@ void goBackN(int sock, struct sockaddr_in *socketAdressLocal, struct sockaddr_in
             if (packetPertu->ack >= ackAlreadyGet) {
                 last_ack = packetPertu->ack;
             }
-            if (packetPertu->ack >= 10000) {
+            if (packetPertu->ack >= 1000) {
                 end = TRUE;
             }
             printf("Congestion window : %d | current_open_slot : %d | last_ack : %d \n", c_window, current_open_slot, last_ack);
@@ -340,17 +372,52 @@ void endConnection(int sock, struct sockaddr_in *socketAdressLocal, struct socka
     // packet initialization
     packetLocal->flux_id = 1;
     packetLocal->type = FIN;
-    packetLocal->seq = rand() % MAX_SEQ;
-    packetLocal->ack = 0;
+    packetLocal->seq = htons(rand() % MAX_SEQ);
+    packetLocal->ack = htons(0);
     packetLocal->ecn = ECN_DISABLE;
     packetLocal->e_window = 1;
     sprintf(packetLocal->data, "%s", "FIN");
     memcpy(messLocal, packetLocal, sizeof(struct packet));
 
-    if (sendto(sock, messLocal, MESSAGE_BUFF, 0, (struct sockaddr*) socketAdressPertu, len) == -1) {
-        perror("Problème au niveau de l'envoie");
-    } else {
-        printf("Envoie de la fin \n");
+    do {
+        do {
+            // send a the FIN message
+            if (sendto(sock, messLocal, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressPertu, len) == -1) {
+                perror("Erreur au niveau du sendtod \n");
+                exit(0);
+            }
+
+            // get the response message and check if the result is SYN + ACK
+            if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
+                if (errno == EWOULDBLOCK) {
+                    printf("Timeout \n");
+                } else {
+                    perror("Erreur au niveau du recvfrom \n");
+                    exit(0);
+                }
+            }
+            memcpy(packetPertu, messPertu, sizeof(struct packet));
+        } while ((packetPertu->type != ACK) && (packetPertu->ack != packetPertu->seq + 1));
+        // waiting the FIN from dest
+        if (recvfrom(sock, messPertu, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressLocal, &len) == -1) {
+            if (errno == EWOULDBLOCK) {
+                printf("Timeout \n");
+            } else {
+                perror("Erreur au niveau du recvfrom \n");
+                exit(0);
+            }
+        }
+        memcpy(packetPertu, messPertu, sizeof(struct packet));
+    } while (packetPertu->type != FIN);
+
+    // send the last ACK
+    packetLocal->type = ACK;
+    packetLocal->seq = packetPertu->seq;
+    packetLocal->ack = packetPertu->ack + 1;
+    memcpy(messLocal, packetLocal, sizeof(struct packet));
+    if (sendto(sock, messLocal, MESSAGE_BUFF, 0, (struct sockaddr *) socketAdressPertu, len) == -1) {
+        perror("Erreur au niveau du sendtod \n");
+        exit(0);
     }
 }
 /*
@@ -368,7 +435,6 @@ int main(int argc, char *argv[]) {
     const in_addr_t ipDest = inet_addr(argv[2]);
     char mode[10];
     int isConEnable = FALSE;
-
 
     // vérification que le port est été saisie.
     if(port_local == 0 ) {
@@ -390,7 +456,7 @@ int main(int argc, char *argv[]) {
     // Initialisation du socket et test d'erreur
     struct timeval timeout;
     timeout.tv_sec = 0;
-    timeout.tv_usec = 500*1000; // 0.5 secondes
+    timeout.tv_usec = 200*1000; // 0.5 secondes
     int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (sock == -1) {
         perror("Problème au niveau du socket \n");
@@ -431,6 +497,11 @@ int main(int argc, char *argv[]) {
         goBackN(sock, &socketAdressLocal, &socketAdressPertu);
     }
 
+    timeout.tv_sec = 1;
+    timeout.tv_usec = 0;
+    if (setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (char *) &timeout, sizeof(struct timeval)) < 0) {
+        perror("Problème au niveau du timeout \n");
+    }
     // close the connection with a 3way handshake
     endConnection(sock, &socketAdressLocal, &socketAdressPertu);
 
